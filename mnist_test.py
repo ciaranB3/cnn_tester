@@ -11,9 +11,64 @@ import matplotlib.patches as mpatches
 import time
 import os
 
+class LIT(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        ctx.save_for_backward(input)
+        return F.relu(input)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        In the backward pass we receive a Tensor containing the gradient of the loss
+        with respect to the output, and we need to compute the gradient of the loss
+        with respect to the input.
+        """
+        input, = ctx.saved_tensors
+        grad_input = grad_output.clone()
+        grad_input[input < 0] = 0
+        return grad_input
+
+
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
+        self.conv1 = nn.Conv2d(1, 20, 5, 1)
+        self.conv2 = nn.Conv2d(20, 50, 5, 1)
+        self.fc1 = nn.Linear(4*4*50, 500)
+        self.fc2 = nn.Linear(500, 10)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(-1, 4*4*50)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
+
+class DumbNet(nn.Module):
+    def __init__(self):
+        super(DumbNet, self).__init__()
+        self.conv1 = nn.Conv2d(1, 20, 5, 1)
+        self.conv2 = nn.Conv2d(20, 50, 5, 1)
+        self.fc1 = nn.Linear(4*4*50, 500)
+        self.fc2 = nn.Linear(500, 10)
+
+    def forward(self, x):
+        x = LIT.apply(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = LIT.apply(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(-1, 4*4*50)
+        x = LIT.apply(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
+
+class LitNet(nn.Module):
+    def __init__(self):
+        super(LitNet, self).__init__()
         self.conv1 = nn.Conv2d(1, 20, 5, 1)
         self.conv2 = nn.Conv2d(20, 50, 5, 1)
         self.fc1 = nn.Linear(4*4*50, 500)
@@ -73,8 +128,8 @@ def main():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
-                        help='number of epochs to train (default: 3)')
+    parser.add_argument('--epochs', type=int, default=5, metavar='N',
+                        help='number of epochs to train (default: 5)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
@@ -89,6 +144,10 @@ def main():
                         help='For Saving the current Model')
     parser.add_argument('--file-name', type=str, default='test_' + str(int(start))[-3:], metavar='filename',
                         help='Name of file to store model and losses')
+    parser.add_argument('--quant-type', type=str, default='none', metavar='qtype',
+                        help='Type of quantisation used on activation functions')
+    parser.add_argument('--bit-res', type=int, default=4, metavar='bitres',
+                        help='Bit resolution of activation funtion')
     args = parser.parse_args()
 
     use_cuda = not args.no_cuda and torch.cuda.is_available()
@@ -110,12 +169,23 @@ def main():
                        ])),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
+    qt = args.quant_type
+    if qt == 'dumb':
+        model = DumbNet().to(device)
+        print("Building dumb {0} bit network".format(args.bit_res))
+    elif qt == 'lit':
+        model = LitNet().to(device)
+        print("Building LIT {0} bit network".format(args.bit_res))
+    else:
+        model = Net().to(device)
+        print("\nBuilding full resolution network")
 
-    model = Net().to(device)
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     losses_train = np.zeros((args.epochs))
     losses_test  = np.zeros((args.epochs))
+
+    start = time.time()
 
     for epoch in range(1, args.epochs + 1):
         epoch_train_loss    = train(args, model, device, train_loader, optimizer, epoch)
@@ -123,7 +193,7 @@ def main():
         losses_train[epoch-1] = epoch_train_loss 
         losses_test[epoch-1]  = epoch_test_loss
         current_time = time.time() - start
-        print('\nEpoch: {:02d}'.format(epoch))
+        print('\nEpoch: {:d}'.format(epoch))
         print('Training set loss: {:.6f}'.format(epoch_train_loss))
         print('Test set loss: {:.6f}'.format(epoch_test_loss))
         print('Time taken: {:.6f}s'.format(current_time))
