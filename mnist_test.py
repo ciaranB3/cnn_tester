@@ -86,39 +86,42 @@ class LitNet(nn.Module):
         return F.log_softmax(x, dim=1)
     
 def train(args, model, device, train_loader, optimizer, epoch):
-    model.train()
+    # model.train()
     epoch_loss = 0.0
     batch_loss = 0.0
+    num_passes = 0.0
     for batch_idx, (inputs, labels) in enumerate(train_loader, 0):
         inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = nn.CrossEntropyLoss(outputs, labels)
+        criterion = nn.CrossEntropyLoss()
+        loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
         batch_loss += loss.item()
         epoch_loss += loss.item()
-        if batch_idx % args.log_interval == args.log_interval:
+        num_passes += 1.0
+        if batch_idx % args.log_interval == args.log_interval-1:
             print('[{}, {}] loss: {:.6f}'.format(
                 epoch, batch_idx, loss.item()))
             batch_loss = 0.0
-    return sum(losses)/float(len(losses))
+    return epoch_loss/float(num_passes)
 
 def test(args, model, device, test_loader):
-    model.eval()
+    # model.eval()
     correct = 0
     total = 0
     with torch.no_grad():
         for (inputs, labels) in test_loader:
             images, labels = inputs.to(device), labels.to(device)
-            outputs = model(data)
+            outputs = model(images)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
-    print('\nTest set accuracy: {:.0f}%)\n'.format(
-        100 * correct / total ))
-    return correct / total
+    # print('\nTest set accuracy: {:.0f}%\n'.format(
+        # 100 * correct / total ))
+    return 100 * correct / total
 
 def main():
     start = time.time()
@@ -140,7 +143,7 @@ def main():
                         help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--save-model', action='store_true', default=False,
+    parser.add_argument('--save-model', action='store_true', default=True,
                         help='For Saving the current Model')
     parser.add_argument('--file-name', type=str, default='test_' + str(int(start))[-3:], metavar='filename',
                         help='Name of file to store model and losses')
@@ -161,12 +164,12 @@ def main():
 
     trainset = datasets.CIFAR10(root='./data', train=True,
                                             download=True, transform=transform)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=4,
+    train_loader = torch.utils.data.DataLoader(trainset, batch_size=4,
                                               shuffle=True, num_workers=2)
 
     testset = datasets.CIFAR10(root='./data', train=False,
                                            download=True, transform=transform)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=4,
+    test_loader = torch.utils.data.DataLoader(testset, batch_size=4,
                                              shuffle=False, num_workers=2)
 
     classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
@@ -185,7 +188,7 @@ def main():
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     losses_train = np.zeros((args.epochs))
-    losses_test  = np.zeros((args.epochs))
+    accuracy_test  = np.zeros((args.epochs))
 
     start = time.time()
 
@@ -195,19 +198,20 @@ def main():
         losses_train[epoch-1] = epoch_train_loss 
         accuracy_test[epoch-1]  = epoch_test_accuracy
         current_time = time.time() - start
-        print('\nEpoch: {:d}'.format(epoch))
-        print('Training set loss: {:.6f}'.format(epoch_train_loss))
-        print('Test set loss: {:.6f}'.format(epoch_test_accuracy))
-        print('Time taken: {:.6f}s'.format(current_time))
+        print('\nEpoch {:d} summary'.format(epoch))
+        print('Training set average loss: {:.6f}'.format(epoch_train_loss))
+        print('Test set accuracy: {:.0f}%'.format(epoch_test_accuracy))
+        # print('Test set loss: {:.6f}'.format(epoch_test_accuracy))
+        print('Time taken: {:.3f}s\n'.format(current_time))
 
     if (args.save_model):
         if not os.path.exists('models'):
             os.mkdir('models')
         torch.save(model.state_dict(),'models/' + args.file_name+'.pt')
-        if not os.path.exists('data'):
-            os.mkdir('data')
+        if not os.path.exists('results'):
+            os.mkdir('results')
         losses = np.stack((losses_train, accuracy_test), axis=1)
-        np.savetxt('data/' + args.file_name+'.txt', losses, delimiter=', ')
+        np.savetxt('results/' + args.file_name+'.txt', losses, delimiter=', ')
 
     fig = plt.figure()
     ax = fig.gca()
@@ -216,7 +220,7 @@ def main():
     ax.set_ylabel('Loss', color='b')
     ax.set_xlabel('Epoch')
 
-    ax2 = ax1.twinx()
+    ax2 = ax.twinx()
     ax2.plot(accuracy_test, 'r-')
     ax2.set_ylabel('Accuracy (%)', color = 'r')
     
