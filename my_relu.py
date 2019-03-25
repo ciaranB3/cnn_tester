@@ -33,7 +33,7 @@ class LIT(torch.autograd.Function):
 
         grad_inputs_sum = grad_output.clone()
         grad_inputs_sum[x<alpha] = 0
-        print("Values: {}".format(grad_inputs_sum))
+        # print("Values: {}".format(grad_inputs_sum))
         grad_inputs_sum = torch.sum(grad_inputs_sum)*torch.ones(1).to(device)
         print("Sum: {} Cloned Sum: {}".format( torch.sum(grad_input), grad_inputs_sum))
         # print("Backward alpha: {}".format(alpha.data))
@@ -128,6 +128,9 @@ if __name__ == '__main__':
     criterion = torch.nn.MSELoss(reduction='sum')
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-4, momentum=0.9, weight_decay=0.01)
 
+    y_pred = model(x).to(device)
+    loss = criterion(y_pred, y)
+    print(model.parameters)
     for t in range(200):
         # Forward pass: Compute predicted y by passing x to the model
         y_pred = model(x).to(device)
@@ -135,6 +138,7 @@ if __name__ == '__main__':
         # Compute and print loss
         loss = criterion(y_pred, y)
         print(loss.item())
+        print("alpha: {}".format(model.lit1.alpha.data[0]))
         # print ("\n\n")
         # print (model.lit1.alpha.grad)
         # print ("\n\n")
