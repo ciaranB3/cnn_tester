@@ -73,24 +73,6 @@ class Net(nn.Module):
         x = self.fc3(x)
         return x
 
-class DumbNet(nn.Module):
-    def __init__(self):
-        super(DumbNet, self).__init__()
-        self.conv1 = nn.Conv2d(1, 20, 5, 1)
-        self.conv2 = nn.Conv2d(20, 50, 5, 1)
-        self.fc1 = nn.Linear(4*4*50, 500)
-        self.fc2 = nn.Linear(500, 10)
-
-    def forward(self, x):
-        x = LIT.apply(self.conv1(x))
-        x = F.max_pool2d(x, 2, 2)
-        x = LIT.apply(self.conv2(x))
-        x = F.max_pool2d(x, 2, 2)
-        x = x.view(-1, 4*4*50)
-        x = LIT.apply(self.fc1(x))
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
-
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
@@ -436,7 +418,7 @@ def litresnet18(pretrained=False, **kwargs):
     return model
     
 def train(args, model, device, train_loader, optimizer, epoch):
-    # model.train()
+    model.train()
     epoch_loss = 0.0
     batch_loss = 0.0
     num_passes = 0.0
@@ -454,12 +436,11 @@ def train(args, model, device, train_loader, optimizer, epoch):
         if batch_idx % args.log_interval == args.log_interval-1:
             print('[{}, {}] loss: {:.6f}'.format(
                 epoch, batch_idx, loss.item()))
-            # print(model.layer1.*layer[0].parameters)
             batch_loss = 0.0
     return epoch_loss/float(num_passes)
 
 def test(args, model, device, test_loader):
-    # model.eval()
+    model.eval()
     correct = 0
     total = 0
     with torch.no_grad():
@@ -469,9 +450,6 @@ def test(args, model, device, test_loader):
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-
-    # print('\nTest set accuracy: {:.0f}%\n'.format(
-        # 100 * correct / total ))
     return 100.0 * correct / total
 
 def main():
@@ -487,7 +465,7 @@ def main():
     parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
                         help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
-                        help='SGD momentum (default: 0.5)')
+                        help='SGD momentum (default: 0.9)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -524,13 +502,8 @@ def main():
     test_loader = torch.utils.data.DataLoader(testset, batch_size=args.test_batch_size,
                                              shuffle=False, num_workers=2)
 
-    classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
-
     qt = args.quant_type
-    if qt == 'dumb':
-        model = DumbNet().to(device)
-        print("Building dumb {0} bit network".format(args.bit_res))
-    elif qt == 'lit':
+    if qt == 'lit':
         model = litresnet18().to(device)
         print("Building LIT {0} bit network".format(args.bit_res))
     else:
@@ -543,25 +516,14 @@ def main():
     losses_train = np.zeros((args.epochs))
     accuracy_test  = np.zeros((args.epochs))
 
-    # epoch_train_loss    = train(args, model, device, train_loader, optimizer, 0)
-    # print(model.parameters)
-
-    # for k, v in model.state_dict().iteritems():
-    #     print("Layer {}".format(k))
-    #     if (isinstance(k, LITnet)):
-    #         print("\npoo\n")
-    # print(model.layer1[0].lit1.alpha.data[0].item())
-    #         # print(v.alpha.data[0])
-    #         # print("\n\n")
-    #     # print(v)
-
     start = time.time()
 
     for epoch in range(1, args.epochs+1):
         if epoch%60==0:
             lr = lr/10.0
             print("\nUpdating learning rate to {}\n".format(lr))
-            optimizer = optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=0.0002)
+            optimizer = optim.SGD(model.parameters(), lr=lr, 
+                momentum=args.momentum, weight_decay=0.0002)
         epoch_train_loss    = train(args, model, device, train_loader, optimizer, epoch-1)
         epoch_test_accuracy = test(args, model, device, test_loader)
         losses_train[epoch-1] = epoch_train_loss 
@@ -570,8 +532,8 @@ def main():
         print('\nEpoch {:d} summary'.format(epoch-1))
         print('Training set average loss: {:.6f}'.format(epoch_train_loss))
         print('Test set accuracy: {:.2f}%'.format(epoch_test_accuracy))
-        print('Layer1 alpha1: {} Layer1 alpha2: {}'.format(model.layer1[0].lit1.alpha.data[0].item(), model.layer1[0].lit2.alpha.data[0].item()))
-        # print('Test set loss: {:.6f}'.format(epoch_test_accuracy))
+        print('Layer1 alpha1: {} Layer1 alpha2: {}'.format(
+            model.layer1[0].lit1.alpha.data[0].item(), model.layer1[0].lit2.alpha.data[0].item()))
         print('Time taken: {:.3f}s\n'.format(current_time))
 
     if (args.save_model):
@@ -594,9 +556,6 @@ def main():
     ax2.plot(accuracy_test, 'r-')
     ax2.set_ylabel('Accuracy (%)', color = 'r')
     
-    # # blue_line = mpatches.Patch(color='blue', label='Training Loss')
-    # # orange_line = mpatches.Patch(color='orange', label='Testing Accuracy')
-    # # plt.legend(handles=[blue_line, orange_line])
     plt.show()
 
 def imshow(img):
@@ -607,11 +566,11 @@ def imshow(img):
 
 def quick_test():
     transform = transforms.Compose(
-    [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    [transforms.ToTensor(), transforms.Normalize((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))])
 
     testset = datasets.CIFAR10(root='./data', train=False,
                                            download=True, transform=transform)
-    test_loader = torch.utils.data.DataLoader(testset, batch_size=32,
+    test_loader = torch.utils.data.DataLoader(testset, batch_size=1000,
                                              shuffle=False, num_workers=2)
 
     classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
@@ -619,17 +578,41 @@ def quick_test():
     dataiter = iter(test_loader)
     images, labels = dataiter.next()
 
-    model = resnet18()
-    model.load_state_dict(torch.load("models/test_163.pt"))
+    model = litresnet18()
+    model.load_state_dict(torch.load("models/litresnet18epochs200v3.pt"))
     model.eval()
     outputs = model(images)
     _, predicted = torch.max(outputs, 1)
 
-    # print images
     for i in range(32):
         print('GroundTruth: {} \t Predicted: {}'.format(classes[labels[i]], classes[predicted[i]]))
     imshow(utils.make_grid(images))
 
+def accuracy_test():
+    transform = transforms.Compose(
+    [transforms.ToTensor(), transforms.Normalize((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))])
+
+    testset = datasets.CIFAR10(root='./data', train=False,
+                                           download=True, transform=transform)
+    test_loader = torch.utils.data.DataLoader(testset, batch_size=1000,
+                                             shuffle=False, num_workers=2)
+
+    device = torch.device("cuda")
+    model = resnet18()
+    model.load_state_dict(torch.load("models/resnet18epochs200v2.pt"))
+    model.eval().to(device)
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for (inputs, labels) in test_loader:
+            images, labels = inputs.to(device), labels.to(device)
+            outputs = model(images)
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+    return 100.0 * correct / total
+
 if __name__ == '__main__':
-    main()
+    # main()
     # quick_test()
+    print(accuracy_test())
