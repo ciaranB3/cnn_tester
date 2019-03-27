@@ -13,15 +13,15 @@ import os
 
 class LIT(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, alpha=10.0*torch.autograd.Variable(torch.ones(1,1)), num_bits):
+    def forward(ctx, x, alpha=10.0*torch.autograd.Variable(torch.ones(1,1)), num_bits=4):
         # x, alpha = ctx.saved_tensors
         # print("Forward alpha: {}".format(alpha.data))
         # print("Max input value: {}".format(x.max()))
         ctx.save_for_backward(x, alpha)
-        # print(alpha.type(), alpha.float().type())
         output = x.clamp(min=0, max=alpha.data[0])
         scale = ((2**num_bits)-1)/alpha
-        output = torch.round(output * scale)
+        output = torch.round(output * scale) / scale
+        # output = x.clamp(min=0)
         return output
 
     @staticmethod
@@ -34,15 +34,14 @@ class LIT(torch.autograd.Function):
         x, alpha = ctx.saved_tensors
         # alpha =  alpha-alpha*1000
         grad_input = grad_output.clone()
-        grad_input[x <= 0] = 0
-        grad_input[x >= alpha] = 0
+        grad_input[x.le(0)] = 0
+        grad_input[x.ge(alpha.data[0])] = 0
         # print("Max grad value: {} Min grad value: {}".format(grad_input.max(), grad_input.min()))
         # print("Max input value: {}".format(x.max()))
 
         grad_inputs_sum = grad_output.clone()
-        grad_inputs_sum[x<alpha] = 0
-        # print("Values: {}".format(grad_inputs_sum))
-        grad_inputs_sum = torch.sum(grad_inputs_sum)*torch.ones(1).to(torch.device("cuda"))
+        grad_inputs_sum[x.lt(alpha.data[0])] = 0
+        grad_inputs_sum = torch.sum(grad_inputs_sum).expand_as(alpha)
         # print("Sum: {} Cloned Sum: {}".format( torch.sum(grad_input), grad_inputs_sum))
         # print("Backward alpha: {}".format(alpha.data))
         return grad_input, grad_inputs_sum
@@ -50,7 +49,7 @@ class LIT(torch.autograd.Function):
 class LITnet(nn.Module):
     def __init__(self, alpha, num_bits):
         super(LITnet, self).__init__()
-        self.alpha = nn.Parameter(alpha*torch.ones(1, requires_grad=True))
+        self.alpha = nn.Parameter(torch.Tensor([alpha]), requires_grad=True)
         self.num_bits = num_bits
     def forward(self, x):
         return LIT.apply(x, self.alpha)
@@ -473,7 +472,7 @@ def test(args, model, device, test_loader):
 
     # print('\nTest set accuracy: {:.0f}%\n'.format(
         # 100 * correct / total ))
-    return 100 * correct / total
+    return 100.0 * correct / total
 
 def main():
     start = time.time()
@@ -570,7 +569,7 @@ def main():
         current_time = time.time() - start
         print('\nEpoch {:d} summary'.format(epoch-1))
         print('Training set average loss: {:.6f}'.format(epoch_train_loss))
-        print('Test set accuracy: {:.0f}%'.format(epoch_test_accuracy))
+        print('Test set accuracy: {:.2f}%'.format(epoch_test_accuracy))
         print('Layer1 alpha1: {} Layer1 alpha2: {}'.format(model.layer1[0].lit1.alpha.data[0].item(), model.layer1[0].lit2.alpha.data[0].item()))
         # print('Test set loss: {:.6f}'.format(epoch_test_accuracy))
         print('Time taken: {:.3f}s\n'.format(current_time))
@@ -584,21 +583,21 @@ def main():
         losses = np.stack((losses_train, accuracy_test), axis=1)
         np.savetxt('results/' + args.file_name+'.txt', losses, delimiter=', ')
 
-    # fig = plt.figure()
-    # ax = fig.gca()
-    # ax.set_title('Training Loss / Testing Accuracy')
-    # ax.plot(losses_train, 'b-')
-    # ax.set_ylabel('Loss', color='b')
-    # ax.set_xlabel('Epoch')
+    fig = plt.figure()
+    ax = fig.gca()
+    ax.set_title('Training Loss / Testing Accuracy')
+    ax.plot(losses_train, 'b-')
+    ax.set_ylabel('Loss', color='b')
+    ax.set_xlabel('Epoch')
 
-    # ax2 = ax.twinx()
-    # ax2.plot(accuracy_test, 'r-')
-    # ax2.set_ylabel('Accuracy (%)', color = 'r')
+    ax2 = ax.twinx()
+    ax2.plot(accuracy_test, 'r-')
+    ax2.set_ylabel('Accuracy (%)', color = 'r')
     
     # # blue_line = mpatches.Patch(color='blue', label='Training Loss')
     # # orange_line = mpatches.Patch(color='orange', label='Testing Accuracy')
     # # plt.legend(handles=[blue_line, orange_line])
-    # plt.show()
+    plt.show()
 
 def imshow(img):
     img = img / 2 + 0.5     # unnormalize
