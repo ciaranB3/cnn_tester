@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 if __name__ == '__main__':
 
-    data = np.loadtxt("results/resnet18epochs200v2.txt", delimiter=',')
+    data = np.loadtxt("results/resnet20epochs200.txt", delimiter=',')
     # print(data.shape)
 
     losses_train = data[:,0]
