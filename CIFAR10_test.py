@@ -18,6 +18,9 @@ class LIT(torch.autograd.Function):
         # x, alpha = ctx.saved_tensors
         # print("Forward alpha: {}".format(alpha.data))
         # print("Max input value: {}".format(x.max()))
+        if num_bits!=4:
+            print("num_bits = {}".format(num_bits))
+        ctx.num_bits = num_bits
         ctx.save_for_backward(x, alpha)
         output = x.clamp(min=0, max=alpha.data[0])
         scale = ((2**num_bits)-1)/alpha
@@ -45,7 +48,7 @@ class LIT(torch.autograd.Function):
         grad_inputs_sum = torch.sum(grad_inputs_sum).expand_as(alpha)
         # print("Sum: {} Cloned Sum: {}".format( torch.sum(grad_input), grad_inputs_sum))
         # print("Backward alpha: {}".format(alpha.data))
-        return grad_input, grad_inputs_sum
+        return grad_input, grad_inputs_sum, None
 
 class LITnet(nn.Module):
     def __init__(self, alpha=10.0, bit_res=4):
@@ -138,13 +141,13 @@ class ResNet(nn.Module):
             self.layer2 = self._make_layer(block, 16, num_blocks[0]-1, stride=1)
             self.layer3 = self._make_layer(block, 32, num_blocks[1], stride=2)
             self.layer4 = self._make_layer(block, 64, num_blocks[2]-1, stride=2)
-            self.layer5 = self._make_layer(block, 64, 1, stride=2)
+            self.layer5 = self._make_layer(block, 64, 1, stride=1)
         else:
             self.layer1 = self._make_layer(block, 16, 1, stride=1, position='first', bit_res=self.bit_res)
             self.layer2 = self._make_layer(block, 16, num_blocks[0]-1, stride=1, position='middle', bit_res=self.bit_res)
             self.layer3 = self._make_layer(block, 32, num_blocks[1], stride=2, position='middle', bit_res=self.bit_res)
             self.layer4 = self._make_layer(block, 64, num_blocks[2]-1, stride=2, position='middle', bit_res=self.bit_res)
-            self.layer5 = self._make_layer(block, 64, 1, stride=2, position='last', bit_res=self.bit_res)
+            self.layer5 = self._make_layer(block, 64, 1, stride=1, position='last', bit_res=self.bit_res)
         self.linear = nn.Linear(64, num_classes)
 
         self.apply(_weights_init)
@@ -163,6 +166,8 @@ class ResNet(nn.Module):
         out = self.layer1(out)
         out = self.layer2(out)
         out = self.layer3(out)
+        out = self.layer4(out)
+        out = self.layer5(out)
         out = F.avg_pool2d(out, out.size()[3])
         out = out.view(out.size(0), -1)
         out = self.linear(out)
@@ -272,8 +277,8 @@ def main():
     log_interval = 2000
     save_model = True 
     file_name = "ResNet20_CIFAR10"
-    network = "lit20"
-    bit_res = 4
+    network = "full20"
+    bit_res = 7
 
     use_cuda = not no_cuda and torch.cuda.is_available()
     print(torch.cuda.is_available())
@@ -300,7 +305,7 @@ def main():
         print("Building LIT {0} bit resnet-18".format(bit_res))
     elif network == 'lit20':
         model = litresnet20(bit_res=bit_res).to(device)
-        print("Building LIT {0} bit resnet-20".format(bit_res))
+        print("Building LIT {0} bit ResNet-20".format(bit_res))
     elif network == 'full20':
         model = resnet20().to(device)
         print("Building full resolution ResNet-20")
@@ -315,52 +320,52 @@ def main():
 
     print(model.parameters)
 
-    # start = time.time()
+    start = time.time()
 
-    # for epoch in range(0, epochs):
-    #     if epoch==60:
-    #         learning_rate = learning_rate/10.0
-    #         print("\nUpdating learning rate to {}\n".format(learning_rate))
-    #         optimizer = optim.SGD(model.parameters(), lr=learning_rate, 
-    #             momentum=args.momentum, weight_decay=0.0002)
-    #     if epoch==120:
-    #         learning_rate = learning_rate/10.0
-    #         print("\nUpdating learning rate to {}\n".format(learning_rate))
-    #         optimizer = optim.SGD(model.parameters(), lr=learning_rate, 
-    #             momentum=args.momentum, weight_decay=0.0002)
-    #     epoch_train_loss    = train(model, device, train_loader, optimizer, epoch, log_interval)
-    #     epoch_test_accuracy = test(model, device, test_loader)
-    #     losses_train[epoch] = epoch_train_loss 
-    #     accuracy_test[epoch]  = epoch_test_accuracy
-    #     current_time = time.time() - start
-    #     print('\nEpoch {:d} summary'.format(epoch))
-    #     print('Training set average loss: {:.6f}'.format(epoch_train_loss))
-    #     print('Test set accuracy: {:.2f}%'.format(epoch_test_accuracy))
-    #     # print('Layer1 alpha1: {} Layer1 alpha2: {}'.format(
-    #         # model.layer1[0].lit1.alpha.data[0].item(), model.layer1[0].lit2.alpha.data[0].item()))
-    #     print('Time taken: {:.3f}s\n'.format(current_time))
+    for epoch in range(0, epochs):
+        if epoch==60:
+            learning_rate = learning_rate/10.0
+            print("\nUpdating learning rate to {}\n".format(learning_rate))
+            optimizer = optim.SGD(model.parameters(), lr=learning_rate, 
+                momentum=args.momentum, weight_decay=0.0002)
+        if epoch==120:
+            learning_rate = learning_rate/10.0
+            print("\nUpdating learning rate to {}\n".format(learning_rate))
+            optimizer = optim.SGD(model.parameters(), lr=learning_rate, 
+                momentum=args.momentum, weight_decay=0.0002)
+        epoch_train_loss    = train(model, device, train_loader, optimizer, epoch, log_interval)
+        epoch_test_accuracy = test(model, device, test_loader)
+        losses_train[epoch] = epoch_train_loss 
+        accuracy_test[epoch]  = epoch_test_accuracy
+        current_time = time.time() - start
+        print('\nEpoch {:d} summary'.format(epoch))
+        print('Training set average loss: {:.6f}'.format(epoch_train_loss))
+        print('Test set accuracy: {:.2f}%'.format(epoch_test_accuracy))
+        # print('Layer1 alpha1: {} Layer1 alpha2: {}'.format(
+            # model.layer1[0].lit1.alpha.data[0].item(), model.layer1[0].lit2.alpha.data[0].item()))
+        print('Time taken: {:.3f}s\n'.format(current_time))
 
-    # if (args.save_model):
-    #     if not os.path.exists('models'):
-    #         os.mkdir('models')
-    #     torch.save(model.state_dict(),'models/' + args.file_name+'.pt')
-    #     if not os.path.exists('results'):
-    #         os.mkdir('results')
-    #     losses = np.stack((losses_train, accuracy_test), axis=1)
-    #     np.savetxt('results/' + args.file_name+'.txt', losses, delimiter=', ')
+    if (args.save_model):
+        if not os.path.exists('models'):
+            os.mkdir('models')
+        torch.save(model.state_dict(),'models/' + args.file_name+'.pt')
+        if not os.path.exists('results'):
+            os.mkdir('results')
+        losses = np.stack((losses_train, accuracy_test), axis=1)
+        np.savetxt('results/' + args.file_name+'.txt', losses, delimiter=', ')
 
-    # fig = plt.figure()
-    # ax = fig.gca()
-    # ax.set_title('Training Loss / Testing Accuracy')
-    # ax.plot(losses_train, 'b-')
-    # ax.set_ylabel('Loss', color='b')
-    # ax.set_xlabel('Epoch')
+    fig = plt.figure()
+    ax = fig.gca()
+    ax.set_title('Training Loss / Testing Accuracy')
+    ax.plot(losses_train, 'b-')
+    ax.set_ylabel('Loss', color='b')
+    ax.set_xlabel('Epoch')
 
-    # ax2 = ax.twinx()
-    # ax2.plot(accuracy_test, 'r-')
-    # ax2.set_ylabel('Accuracy (%)', color = 'r')
+    ax2 = ax.twinx()
+    ax2.plot(accuracy_test, 'r-')
+    ax2.set_ylabel('Accuracy (%)', color = 'r')
     
-    # plt.show()
+    plt.show()
 
 def imshow(img):
     img = img / 2 + 0.5     # unnormalize
