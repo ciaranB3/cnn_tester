@@ -4,25 +4,41 @@ import matplotlib.patches as mpatches
 
 if __name__ == '__main__':
 
-    data = np.loadtxt("results/resnet20epochs200.txt", delimiter=',')
-    data2 = np.loadtxt("results/litresnet20epochs200.txt", delimiter=',')
+    data = np.loadtxt("results/ResNet20_CIFAR10.txt", delimiter=',')
+    # data2 = np.loadtxt("results/litresnet20epochs200.txt", delimiter=',')
 
     # print(data.shape)
 
     losses_train = data[:,0]
-    losses_train2 = data2[:,0]
+    # losses_train2 = data2[:,0]
 
-    # accuracy_test = data[:,1]
 
-    fig = plt.figure()
+    accuracy_test = data[:,1]
+    # accuracy_test2 = data[:,1]
+
+
+    fig = plt.figure(1)
     ax = fig.gca()
     ax.set_title('Training Error')
     ax.set_yscale("log", nonposy='clip')
     ax.plot(losses_train, 'b-', label="Full Resolution")
-    ax.plot(losses_train2, 'r--', label="4-bit LIT")    
+    # ax.plot(losses_train2, 'r--', label="4-bit PACT")    
     ax.set_ylabel('Loss') #, color='b')
     ax.set_xlabel('Epoch')
     ax.legend()
+
+    fig2 = plt.figure(2)
+    ax2 = fig2.gca()
+    ax2.set_title('Validation Accuracy')
+    # ax2.set_yscale("log", nonposy='clip')
+    ax2.plot(accuracy_test, 'b-', label="Full Resolution")
+    # ax2.plot(accuracy_test2, 'r--', label="4-bit PACT")    
+    ax2.set_ylabel('Loss') #, color='b')
+    ax2.set_xlabel('Epoch')
+    ax2.legend()
+
+    print(np.amax(accuracy_test))
+    # print(np.amax(accuracy_test2))
 
     # ax2 = ax.twinx()
     # ax2.plot(accuracy_test, 'r-')
