@@ -87,8 +87,10 @@ class BasicBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
         if position!='none':
             self.lit1 = LITnet(alpha=10.0, bit_res=bit_res)
-        if position=='middle':
-            self.lit2 = LITnet(alpha=10.0, bit_res=bit_res)
+            if position=='middle':
+                self.lit2 = LITnet(alpha=10.0, bit_res=bit_res)
+            else:
+                 self.lit2 = LITnet(alpha=10.0, bit_res=2*bit_res)
 
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != planes:
@@ -106,7 +108,7 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         if self.position=='first':
-            out = F.relu(self.bn1(self.conv1(x)))
+            out = self.lit2(self.bn1(self.conv1(x)))
             out = self.bn2(self.conv2(out))
             out += self.shortcut(x)
             out = self.lit1(out)
@@ -119,7 +121,7 @@ class BasicBlock(nn.Module):
             out = self.lit1(self.bn1(self.conv1(x)))
             out = self.bn2(self.conv2(out))
             out += self.shortcut(x)
-            out = F.relu(out)
+            out = self.lit2(out)
         else:
             out = F.relu(self.bn1(self.conv1(x)))
             out = self.bn2(self.conv2(out))
