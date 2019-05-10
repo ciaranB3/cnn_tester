@@ -40,16 +40,16 @@ class LITnet(nn.Module):
 def quantizek(num_bits):
     class quant(torch.autograd.Function):
     
-    @staticmethod
-    def forward(ctx. input):
-        scale = (2.0**num_bits) - 1
-        out = torch.round(x * scale) / scale 
-        return out 
+        @staticmethod
+        def forward(ctx, input):
+            scale = (2.0**num_bits) - 1
+            out = torch.round(x * scale) / scale 
+            return out 
 
-    @staticmethod
-    def backward(ctx, grad_output):
-        grad_input = grad_output.clone()
-        return grad_input
+        @staticmethod
+        def backward(ctx, grad_output):
+            grad_input = grad_output.clone()
+            return grad_input
 
     return quant().apply
 

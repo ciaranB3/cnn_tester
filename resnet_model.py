@@ -1,3 +1,6 @@
+import torch.nn.init as init
+import torch.nn.functional as F
+
 from quantize import *
 
 def _weights_init(m):
@@ -54,24 +57,24 @@ class BasicLitBlock(nn.Module):
         self.position = position
         self.bit_res = bit_res
         if self.position=='first':
-            self.conv1 = Conv2D_quant(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False, bit_res=bit_res*2)
+            self.conv1 = conv2d_quant(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False, bit_res=bit_res*2)
             self.bn1 = nn.BatchNorm2d(planes)
             self.lit1 = LITnet(alpha=10.0, bit_res=bit_res*2)
-            self.conv2 = Conv2D_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, bit_res=bit_res)
+            self.conv2 = conv2d_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, bit_res=bit_res)
             self.bn2 = nn.BatchNorm2d(planes)
             self.lit2 = LITnet(alpha=10.0, bit_res=bit_res)
         elif self.position=='middle':
-            self.conv1 = Conv2D_quant(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False, bit_res=bit_res)
+            self.conv1 = conv2d_quant(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False, bit_res=bit_res)
             self.bn1 = nn.BatchNorm2d(planes)
             self.lit1 = LITnet(alpha=10.0, bit_res=bit_res)
-            self.conv2 = Conv2D_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, bit_res=bit_res)
+            self.conv2 = conv2d_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, bit_res=bit_res)
             self.bn2 = nn.BatchNorm2d(planes)
             self.lit2 = LITnet(alpha=10.0, bit_res=bit_res)
         elif self.position=='last':
-            self.conv1 = Conv2D_quant(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False, bit_res=bit_res)
+            self.conv1 = conv2d_quant(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False, bit_res=bit_res)
             self.bn1 = nn.BatchNorm2d(planes)
             self.lit1 = LITnet(alpha=10.0, bit_res=bit_res)
-            self.conv2 = Conv2D_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, bit_res=bit_res)
+            self.conv2 = conv2d_quant(planes, planes, kernel_size=3, stride=1, padding=1, bias=False, bit_res=bit_res)
             self.bn2 = nn.BatchNorm2d(planes)
             self.lit2 = LITnet(alpha=10.0, bit_res=bit_res*2)
         else:
@@ -110,7 +113,7 @@ class ResNet(nn.Module):
         self.in_planes = 16
         self.quant = quant
         self.num_bits = num_bits
-        firstConv2d = Conv2D_quant(fl_bits)
+        firstConv2d = conv2d_quant(num_bits=fl_bits)
 
         if self.quant=='none':
             self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
@@ -121,15 +124,15 @@ class ResNet(nn.Module):
             self.layer3 = self._make_layer(BasicBlock, 64, num_blocks[2], stride=2)
             self.linear = nn.Linear(64, num_classes)
         elif self.quant=='lit':
-            self.conv1 = myConv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
+            self.conv1 = firstConv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
             self.bn1 = nn.BatchNorm2d(16)
             self.actfn = nn.ReLU()
             self.layer1 = self._make_layer(BasicBlock, 16, num_blocks[0], stride=1)
             self.layer2 = self._make_layer(BasicBlock, 32, num_blocks[1], stride=2)
             self.layer3 = self._make_layer(BasicBlock, 64, num_blocks[2], stride=2)
             self.linear = nn.Linear(64, num_classes)
-        elif self.quant=='pact':
-            self.conv1 = (3, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        elif self.quant=='doreme':
+            self.conv1 = firstConv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
             self.bn1 = nn.BatchNorm2d(16)
             self.actfn = nn.ReLU()
             self.layer1 = self._make_layer(BasicBlock, 16, num_blocks[0], stride=1)
@@ -144,7 +147,7 @@ class ResNet(nn.Module):
         layers = []
         for stride in strides:
             if self.quant=='none':
-                layers.append(block(self.in_planes, planes, stride, position=position))
+                layers.append(block(self.in_planes, planes, stride))
             else:
                 layers.append(block(self.in_planes, planes, stride, position=position, bit_res=bit_res))
             self.in_planes = planes * block.expansion
@@ -161,14 +164,14 @@ class ResNet(nn.Module):
         out = self.linear(out)
         return out
 
-def resnet20(quant_type='none', num_bits=4):
-    if quant_type=='lit':
-        model = ResNet(BasicBlock, [3, 3, 3])
+def resnet20(quant_type='none', num_bits=4, fl_bits=8, ll_bits=8):
+    if quant_type=='none':
+        model = ResNet([3, 3, 3])
+
+    elif quant_type=='lit':
+        model = ResNet([3, 3, 3], num_bits=4, fl_bits=8, ll_bits=8)
 
     elif quant_type=='doreme':
-        model = ResNet(BasicBlock, [3, 3, 3])
-    
-    else:
-        model = ResNet(BasicBlock, [3, 3, 3])
+        model = ResNet([3, 3, 3], num_bits=4, fl_bits=8, ll_bits=8)
     
     return model
